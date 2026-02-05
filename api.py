@@ -73,10 +73,14 @@ class ErrorResponse(BaseModel):
 # FASTAPI APPLICATION
 # ============================================================================
 
+from fastapi import FastAPI
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+
 app = FastAPI(
     title="AI Voice Detection API",
     description="Detects whether a voice sample is AI-generated or Human across Tamil, English, Hindi, Malayalam, and Telugu",
-    version="1.0.0"
+    version="1.0.0",
+    redirect_slashes=True  # Handle both /path and /path/
 )
 
 # Add CORS middleware
