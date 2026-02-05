@@ -1,0 +1,14 @@
+# Render.com deployment configuration
+services:
+  - type: web
+    name: ai-voice-detection-api
+    env: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: API_KEY
+        generateValue: true
+      - key: PORT
+        value: 8000
+      - key: PYTHON_ENV
+        value: production

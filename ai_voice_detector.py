@@ -382,16 +382,40 @@ class FeatureExtractor:
             
         try:
             logger.info("Loading Wav2Vec2 model...")
-            self.wav2vec_processor = Wav2Vec2Processor.from_pretrained(
-                "facebook/wav2vec2-base-960h"
-            )
-            self.wav2vec_model = Wav2Vec2Model.from_pretrained(
-                "facebook/wav2vec2-base-960h"
-            ).to(self.device)
+            
+            # Suppress the expected weight initialization warnings from transformers
+            import logging as _logging
+            transformers_logger = _logging.getLogger("transformers.modeling_utils")
+            original_level = transformers_logger.level
+            transformers_logger.setLevel(_logging.ERROR)
+            
+            try:
+                # Use local_files_only=True if already cached, fallback to download
+                try:
+                    self.wav2vec_processor = Wav2Vec2Processor.from_pretrained(
+                        "facebook/wav2vec2-base-960h",
+                        local_files_only=True
+                    )
+                    self.wav2vec_model = Wav2Vec2Model.from_pretrained(
+                        "facebook/wav2vec2-base-960h",
+                        local_files_only=True
+                    ).to(self.device)
+                except Exception:
+                    # Fallback to download
+                    self.wav2vec_processor = Wav2Vec2Processor.from_pretrained(
+                        "facebook/wav2vec2-base-960h"
+                    )
+                    self.wav2vec_model = Wav2Vec2Model.from_pretrained(
+                        "facebook/wav2vec2-base-960h"
+                    ).to(self.device)
+            finally:
+                # Restore the original logging level
+                transformers_logger.setLevel(original_level)
+            
             self.wav2vec_model.eval()
             logger.info("✓ Wav2Vec2 loaded")
         except Exception as e:
-            logger.warning(f"Failed to load Wav2Vec2: {e}")
+            logger.warning(f"Failed to load Wav2Vec2: {e}. Detection will work without deep learning.")
             self.wav2vec_model = None
             self.wav2vec_processor = None
     
@@ -1490,11 +1514,11 @@ def main():
     print("AI VOICE DETECTION SYSTEM - EXAMPLE RUN")
     print("="*80)
     
-    # Create detector with custom configuration
+    # Create detector with default configuration
+    # The default config has properly calibrated weights
     config = AudioConfig(
         max_duration_sec=15.0,
-        ai_threshold=0.6,
-        weight_ml=0.35
+        ai_threshold=0.55
     )
     
     detector = AIVoiceDetector(config)
