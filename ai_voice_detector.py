@@ -15,6 +15,7 @@ Python: 3.9+
 import logging
 import os
 import warnings
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
@@ -26,6 +27,14 @@ import librosa
 import scipy.signal
 import scipy.stats
 from scipy.fft import fft
+import soundfile as sf
+
+# Try to import pydub for better MP3 support
+try:
+    from pydub import AudioSegment
+    PYDUB_AVAILABLE = True
+except ImportError:
+    PYDUB_AVAILABLE = False
 
 # Try to import torch, but make it optional for lightweight deployment
 try:
@@ -174,13 +183,67 @@ class AudioInputHandler:
                 f"Max: {self.config.max_file_size_mb}MB"
             )
         
-        # Load audio using librosa
+        # Load audio with multiple fallback methods
+        audio, sr = self._load_audio_with_fallback(file_path)
+        logger.info(f"✓ Loaded: {file_path.name} | SR: {sr}Hz | Shape: {audio.shape}")
+        return audio, sr
+    
+    def _load_audio_with_fallback(self, file_path: Path) -> Tuple[np.ndarray, int]:
+        """Load audio with multiple fallback methods for better compatibility."""
+        errors = []
+        
+        # Method 1: Try librosa (supports many formats via audioread/ffmpeg)
         try:
-            audio, sr = librosa.load(file_path, sr=None, mono=False)
-            logger.info(f"✓ Loaded: {file_path.name} | SR: {sr}Hz | Shape: {audio.shape}")
+            audio, sr = librosa.load(str(file_path), sr=None, mono=True)
             return audio, sr
         except Exception as e:
-            raise IOError(f"Failed to load audio: {e}")
+            errors.append(f"librosa: {e}")
+        
+        # Method 2: Try soundfile (good for wav, flac)
+        try:
+            audio, sr = sf.read(str(file_path))
+            if len(audio.shape) > 1:
+                audio = np.mean(audio, axis=1)  # Convert to mono
+            return audio, sr
+        except Exception as e:
+            errors.append(f"soundfile: {e}")
+        
+        # Method 3: Try pydub for MP3 (converts to wav first)
+        if PYDUB_AVAILABLE:
+            try:
+                audio_segment = AudioSegment.from_file(str(file_path))
+                audio_segment = audio_segment.set_channels(1)  # Mono
+                sr = audio_segment.frame_rate
+                samples = np.array(audio_segment.get_array_of_samples(), dtype=np.float32)
+                audio = samples / (2**15)  # Normalize to [-1, 1]
+                return audio, sr
+            except Exception as e:
+                errors.append(f"pydub: {e}")
+        
+        # Method 4: Try ffmpeg directly
+        try:
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+                tmp_path = tmp.name
+            
+            # Convert to WAV using ffmpeg
+            result = subprocess.run(
+                ['ffmpeg', '-i', str(file_path), '-ar', '16000', '-ac', '1', '-y', tmp_path],
+                capture_output=True, text=True
+            )
+            
+            if result.returncode == 0:
+                audio, sr = sf.read(tmp_path)
+                os.unlink(tmp_path)
+                return audio, sr
+            else:
+                errors.append(f"ffmpeg: {result.stderr}")
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+        except Exception as e:
+            errors.append(f"ffmpeg fallback: {e}")
+        
+        raise IOError(f"Failed to load audio. Tried: {'; '.join(errors)}")
     
     def _is_url(self, source: str) -> bool:
         """Check if source is a URL."""
