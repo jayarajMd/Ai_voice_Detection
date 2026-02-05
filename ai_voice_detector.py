@@ -26,17 +26,29 @@ import librosa
 import scipy.signal
 import scipy.stats
 from scipy.fft import fft
-import torch
-import torchaudio
+
+# Try to import torch, but make it optional for lightweight deployment
+try:
+    import torch
+    import torchaudio
+    TORCH_AVAILABLE = True
+except Exception as e:
+    TORCH_AVAILABLE = False
+    torch = None
+    torchaudio = None
 
 # Try to import transformers, but make it optional
-try:
-    from transformers import Wav2Vec2Processor, Wav2Vec2Model
-    TRANSFORMERS_AVAILABLE = True
-except Exception as e:
-    TRANSFORMERS_AVAILABLE = False
-    logger_temp = logging.getLogger(__name__)
-    logger_temp.warning(f"Transformers not available: {e}. Deep learning test will be skipped.")
+TRANSFORMERS_AVAILABLE = False
+Wav2Vec2Processor = None
+Wav2Vec2Model = None
+
+if TORCH_AVAILABLE:
+    try:
+        from transformers import Wav2Vec2Processor, Wav2Vec2Model
+        TRANSFORMERS_AVAILABLE = True
+    except Exception as e:
+        logger_temp = logging.getLogger(__name__)
+        logger_temp.warning(f"Transformers not available: {e}. Deep learning test will be skipped.")
 
 # Configure logging
 logging.basicConfig(

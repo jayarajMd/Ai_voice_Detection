@@ -1,4 +1,4 @@
-# AI Voice Detection API - Production Dockerfile
+# AI Voice Detection API - Lightweight Dockerfile for Free Tier
 FROM python:3.10-slim
 
 # Set working directory
@@ -12,10 +12,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for caching
-COPY requirements.txt .
+COPY requirements-lite.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies (lightweight version without torch)
+RUN pip install --no-cache-dir -r requirements-lite.txt
 
 # Copy application code
 COPY . .
