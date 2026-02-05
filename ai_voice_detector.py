@@ -381,13 +381,17 @@ class FeatureExtractor:
     
     def __init__(self, config: AudioConfig):
         self.config = config
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Only set device if torch is available
+        if TORCH_AVAILABLE:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = None
         self._load_models()
     
     def _load_models(self):
         """Load pretrained models for deep feature extraction."""
-        if not TRANSFORMERS_AVAILABLE:
-            logger.warning("Transformers library not available. Deep learning test will be skipped.")
+        if not TORCH_AVAILABLE or not TRANSFORMERS_AVAILABLE:
+            logger.warning("Torch/Transformers not available. Deep learning test will be skipped.")
             self.wav2vec_model = None
             self.wav2vec_processor = None
             return
@@ -631,6 +635,10 @@ class FeatureExtractor:
     
     def _extract_embeddings(self, audio: np.ndarray, sr: int) -> np.ndarray:
         """Extract deep learned features using Wav2Vec2."""
+        # Check if torch and model are available
+        if not TORCH_AVAILABLE or self.wav2vec_model is None:
+            return np.array([])
+        
         # Resample if needed
         if sr != 16000:
             audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
