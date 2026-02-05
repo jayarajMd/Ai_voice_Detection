@@ -138,6 +138,7 @@ async def root():
         "service": "AI Voice Detection API",
         "version": "1.0.0",
         "supported_languages": SUPPORTED_LANGUAGES,
+        "endpoint": "/api/voice-detection",
         "timestamp": datetime.now().isoformat()
     }
 
@@ -146,6 +147,16 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+
+# POST at root - redirect to main endpoint for compatibility
+@app.post("/")
+async def root_voice_detection(
+    request: VoiceDetectionRequest,
+    x_api_key: Optional[str] = Header(None, alias="x-api-key")
+):
+    """Alias for /api/voice-detection - handles POST at root"""
+    return await detect_voice(request, x_api_key)
 
 
 @app.post("/api/voice-detection", response_model=VoiceDetectionResponse)
