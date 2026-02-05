@@ -11,9 +11,11 @@ Output: JSON with classification result
 """
 
 import os
+import re
 import base64
 import tempfile
 import logging
+import requests
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
@@ -221,24 +223,62 @@ async def detect_voice(
         )
     
     # ========================================================================
-    # 4. DECODE BASE64 AUDIO
+    # 4. DECODE BASE64 AUDIO OR DOWNLOAD FROM URL
     # ========================================================================
-    try:
-        audio_bytes = base64.b64decode(request.audioBase64)
-        logger.info(f"Decoded audio: {len(audio_bytes)} bytes")
-    except Exception as e:
-        logger.error(f"Failed to decode Base64 audio: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail={"status": "error", "message": "Invalid Base64 encoding in audioBase64 field"}
-        )
+    audio_bytes = None
+    audio_input = request.audioBase64.strip()
+    
+    # Check if input is a URL (endpoint tester might send URL)
+    if audio_input.startswith('http://') or audio_input.startswith('https://'):
+        logger.info(f"Detected URL input, downloading audio...")
+        try:
+            response = requests.get(audio_input, timeout=30)
+            response.raise_for_status()
+            audio_bytes = response.content
+            logger.info(f"Downloaded audio: {len(audio_bytes)} bytes")
+        except Exception as e:
+            logger.error(f"Failed to download audio from URL: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail={"status": "error", "message": f"Failed to download audio from URL: {str(e)}"}
+            )
+    else:
+        # Decode Base64
+        try:
+            # Clean up base64 string (remove whitespace, newlines, data URI prefix)
+            cleaned_base64 = audio_input
+            
+            # Handle data URI format: data:audio/mp3;base64,XXXXX
+            if 'base64,' in cleaned_base64:
+                cleaned_base64 = cleaned_base64.split('base64,')[1]
+            
+            # Remove any whitespace/newlines
+            cleaned_base64 = re.sub(r'\s+', '', cleaned_base64)
+            
+            # Add padding if needed
+            padding = 4 - (len(cleaned_base64) % 4)
+            if padding != 4:
+                cleaned_base64 += '=' * padding
+            
+            audio_bytes = base64.b64decode(cleaned_base64)
+            logger.info(f"Decoded audio: {len(audio_bytes)} bytes")
+        except Exception as e:
+            logger.error(f"Failed to decode Base64 audio: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail={"status": "error", "message": "Invalid Base64 encoding in audioBase64 field"}
+            )
     
     # Validate audio data is not empty
-    if len(audio_bytes) < 100:
+    if audio_bytes is None or len(audio_bytes) < 100:
         raise HTTPException(
             status_code=400,
             detail={"status": "error", "message": "Audio data is too small or empty"}
         )
+    
+    # Validate MP3 magic bytes (ID3 or sync word)
+    if not (audio_bytes[:3] == b'ID3' or audio_bytes[:2] == b'\xff\xfb' or audio_bytes[:2] == b'\xff\xfa' or audio_bytes[:2] == b'\xff\xf3'):
+        logger.warning(f"Audio might not be valid MP3. First bytes: {audio_bytes[:10].hex()}")
     
     # ========================================================================
     # 5. SAVE TEMPORARY FILE AND ANALYZE
